@@ -1,0 +1,655 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default-deny all unspecified paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Primitive Helpers
+    // -------------------------------------------------------------------------
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isBootstrapOwner() {
+      return isVerifiedUser() && request.auth.token.email == 'official.zexuna@gmail.com';
+    }
+
+    function isAdmin() {
+      return isVerifiedUser()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true;
+    }
+
+    function isNonEmptyString(val, maxLen) {
+      return val is string && val.size() >= 1 && val.size() <= maxLen;
+    }
+
+    function isBoundedString(val, maxLen) {
+      return val is string && val.size() <= maxLen;
+    }
+
+    function isValidDateStr(val) {
+      return val is string && val.size() == 10 && val.matches('^\\d{4}-\\d{2}-\\d{2}$');
+    }
+
+    function isValidTimeStr(val) {
+      return val is string && val.size() == 5 && val.matches('^\\d{2}:\\d{2}$');
+    }
+
+    function slotLockIdFor(data) {
+      return data.date + '_' + data.startTime.split(':')[0] + data.startTime.split(':')[1] + '_' + data.tableId;
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation Blueprints
+    // -------------------------------------------------------------------------
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'role', 'active', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'displayName', 'role', 'active', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && isNonEmptyString(data.email, 200)
+        && isNonEmptyString(data.displayName, 120)
+        && data.role in ['OWNER', 'MANAGER', 'STAFF']
+        && data.active is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidCustomer(data) {
+      return data.keys().hasAll(['customerId', 'name', 'phone', 'email', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['customerId', 'name', 'phone', 'email', 'createdAt', 'updatedAt'])
+        && isValidId(data.customerId)
+        && isNonEmptyString(data.name, 120)
+        && isNonEmptyString(data.phone, 30)
+        && isNonEmptyString(data.email, 200)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidMenuCategory(data) {
+      return data.keys().hasAll(['categoryId', 'name', 'description', 'imageUrl', 'displayOrder', 'active'])
+        && data.keys().hasOnly(['categoryId', 'name', 'description', 'imageUrl', 'displayOrder', 'active'])
+        && isValidId(data.categoryId)
+        && isNonEmptyString(data.name, 80)
+        && isBoundedString(data.description, 400)
+        && isBoundedString(data.imageUrl, 500)
+        && data.displayOrder is number
+        && data.displayOrder >= 0
+        && data.active is bool;
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll([
+          'itemId', 'name', 'description', 'categoryId', 'imageUrl',
+          'originalPrice', 'vegetarian', 'allergens', 'available',
+          'featured', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'itemId', 'name', 'description', 'categoryId', 'imageUrl',
+          'originalPrice', 'discountedPrice', 'vegetarian', 'allergens',
+          'available', 'featured', 'isDemo', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.itemId)
+        && isNonEmptyString(data.name, 120)
+        && isNonEmptyString(data.description, 800)
+        && isValidId(data.categoryId)
+        && isBoundedString(data.imageUrl, 500)
+        && data.originalPrice is number
+        && data.originalPrice >= 0
+        && (!('discountedPrice' in data) || data.discountedPrice == null || (data.discountedPrice is number && data.discountedPrice >= 0 && data.discountedPrice <= data.originalPrice))
+        && data.vegetarian is bool
+        && data.allergens is list
+        && data.allergens.size() <= 20
+        && (data.allergens.size() == 0 || data.allergens[0] is string)
+        && data.available is bool
+        && data.featured is bool
+        && (!('isDemo' in data) || data.isDemo is bool)
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidOffer(data) {
+      return data.keys().hasAll([
+          'offerId', 'title', 'description', 'applicableItems',
+          'originalPrice', 'discountedPrice', 'discountType', 'discountValue',
+          'startAt', 'expiresAt', 'active', 'terms'
+        ])
+        && data.keys().hasOnly([
+          'offerId', 'title', 'description', 'applicableItems',
+          'originalPrice', 'discountedPrice', 'discountType', 'discountValue',
+          'imageUrl', 'startAt', 'expiresAt', 'active', 'terms'
+        ])
+        && isValidId(data.offerId)
+        && isNonEmptyString(data.title, 140)
+        && isNonEmptyString(data.description, 600)
+        && data.applicableItems is list
+        && data.applicableItems.size() <= 50
+        && (data.applicableItems.size() == 0 || data.applicableItems[0] is string)
+        && data.originalPrice is number
+        && data.originalPrice >= 0
+        && data.discountedPrice is number
+        && data.discountedPrice >= 0
+        && data.discountedPrice <= data.originalPrice
+        && data.discountType in ['PERCENTAGE', 'FIXED_AMOUNT']
+        && data.discountValue is number
+        && data.discountValue >= 0
+        && (!('imageUrl' in data) || isBoundedString(data.imageUrl, 500))
+        && data.startAt is timestamp
+        && data.expiresAt is timestamp
+        && data.active is bool
+        && isBoundedString(data.terms, 600);
+    }
+
+    function isValidReservation(data) {
+      return data.keys().hasAll([
+          'reservationId', 'referenceCode', 'customerId', 'customerName',
+          'phone', 'email', 'date', 'startTime', 'endTime',
+          'guestCount', 'tableId', 'status', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'reservationId', 'referenceCode', 'customerId', 'customerName',
+          'phone', 'email', 'date', 'startTime', 'endTime',
+          'guestCount', 'tableId', 'specialRequests', 'status', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.reservationId)
+        && data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 32 && data.referenceCode.matches('^[A-Z0-9\\-]+$')
+        && isValidId(data.customerId)
+        && data.customerName is string && data.customerName.size() >= 2 && data.customerName.size() <= 120
+        && data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 30
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 200
+        && isValidDateStr(data.date)
+        && isValidTimeStr(data.startTime)
+        && isValidTimeStr(data.endTime)
+        && data.guestCount is number && data.guestCount >= 1 && data.guestCount <= 30
+        && isValidId(data.tableId)
+        && (!('specialRequests' in data) || isBoundedString(data.specialRequests, 500))
+        && data.status in ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'COMPLETED', 'NO_SHOW']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidReservationStatusView(data) {
+      return data.keys().hasAll([
+          'referenceCode', 'reservationId', 'date', 'startTime', 'endTime',
+          'guestCount', 'status', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'referenceCode', 'reservationId', 'date', 'startTime', 'endTime',
+          'guestCount', 'tableNumber', 'status', 'cancellationRequested', 'updatedAt'
+        ])
+        && data.referenceCode is string && data.referenceCode.size() >= 4 && data.referenceCode.size() <= 32 && data.referenceCode.matches('^[A-Z0-9\\-]+$')
+        && isValidId(data.reservationId)
+        && isValidDateStr(data.date)
+        && isValidTimeStr(data.startTime)
+        && isValidTimeStr(data.endTime)
+        && data.guestCount is number && data.guestCount >= 1 && data.guestCount <= 30
+        && (!('tableNumber' in data) || isBoundedString(data.tableNumber, 20))
+        && data.status in ['PENDING', 'CONFIRMED', 'REJECTED', 'CANCELLED', 'COMPLETED', 'NO_SHOW']
+        && (!('cancellationRequested' in data) || data.cancellationRequested is bool)
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidSlotLock(data) {
+      return data.keys().hasAll(['lockId', 'tableId', 'date', 'startTime', 'reservationId', 'active', 'createdAt'])
+        && data.keys().hasOnly(['lockId', 'tableId', 'date', 'startTime', 'reservationId', 'active', 'createdAt'])
+        && isValidId(data.lockId)
+        && isValidId(data.tableId)
+        && isValidDateStr(data.date)
+        && isValidTimeStr(data.startTime)
+        && isValidId(data.reservationId)
+        && data.active is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidRestaurantTable(data) {
+      return data.keys().hasAll(['tableId', 'tableNumber', 'capacity', 'location', 'active'])
+        && data.keys().hasOnly(['tableId', 'tableNumber', 'capacity', 'location', 'active'])
+        && isValidId(data.tableId)
+        && isNonEmptyString(data.tableNumber, 20)
+        && data.capacity is number && data.capacity >= 1 && data.capacity <= 30
+        && isBoundedString(data.location, 80)
+        && data.active is bool;
+    }
+
+    function isValidTimeSlot(data) {
+      return data.keys().hasAll(['slotId', 'date', 'startTime', 'endTime', 'capacity', 'reservedCount', 'active'])
+        && data.keys().hasOnly(['slotId', 'date', 'startTime', 'endTime', 'capacity', 'reservedCount', 'active'])
+        && isValidId(data.slotId)
+        && isValidDateStr(data.date)
+        && isValidTimeStr(data.startTime)
+        && isValidTimeStr(data.endTime)
+        && data.capacity is number && data.capacity >= 1
+        && data.reservedCount is number && data.reservedCount >= 0
+        && data.active is bool;
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+          'orderId', 'customerId', 'customerName', 'phone', 'items',
+          'subtotal', 'discount', 'total', 'orderType', 'orderStatus',
+          'paymentStatus', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'orderId', 'customerId', 'customerName', 'phone', 'items',
+          'subtotal', 'discount', 'total', 'orderType', 'orderStatus',
+          'paymentStatus', 'specialInstructions', 'createdAt'
+        ])
+        && isValidId(data.orderId)
+        && isValidId(data.customerId)
+        && isNonEmptyString(data.customerName, 120)
+        && isNonEmptyString(data.phone, 30)
+        && data.items is list && data.items.size() >= 1 && data.items.size() <= 50
+        && data.subtotal is number && data.subtotal >= 0
+        && data.discount is number && data.discount >= 0
+        && data.total is number && data.total >= 0
+        && data.orderType in ['DELIVERY', 'PICKUP']
+        && data.orderStatus in ['WHATSAPP_INITIATED', 'CONFIRMED', 'PREPARING', 'COMPLETED', 'CANCELLED']
+        && data.paymentStatus in ['UNPAID', 'PAID_AT_COUNTER', 'PAID']
+        && (!('specialInstructions' in data) || isBoundedString(data.specialInstructions, 500))
+        && data.createdAt is timestamp;
+    }
+
+    function isValidOrderItem(data) {
+      return data.keys().hasAll([
+          'orderItemId', 'orderId', 'itemId', 'name', 'quantity',
+          'unitPrice', 'discountApplied', 'lineTotal'
+        ])
+        && data.keys().hasOnly([
+          'orderItemId', 'orderId', 'itemId', 'name', 'quantity',
+          'unitPrice', 'discountApplied', 'lineTotal'
+        ])
+        && isValidId(data.orderItemId)
+        && isValidId(data.orderId)
+        && isValidId(data.itemId)
+        && isNonEmptyString(data.name, 120)
+        && data.quantity is number && data.quantity >= 1 && data.quantity <= 100
+        && data.unitPrice is number && data.unitPrice >= 0
+        && data.discountApplied is number && data.discountApplied >= 0
+        && data.lineTotal is number && data.lineTotal >= 0;
+    }
+
+    function isValidChatbotConversation(data) {
+      return data.keys().hasAll(['conversationId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['conversationId', 'customerId', 'createdAt', 'updatedAt'])
+        && isValidId(data.conversationId)
+        && (!('customerId' in data) || isBoundedString(data.customerId, 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidChatbotMessage(data) {
+      return data.keys().hasAll(['messageId', 'conversationId', 'sender', 'content', 'timestamp'])
+        && data.keys().hasOnly(['messageId', 'conversationId', 'sender', 'content', 'timestamp'])
+        && isValidId(data.messageId)
+        && isValidId(data.conversationId)
+        && data.sender in ['USER', 'ASSISTANT']
+        && isNonEmptyString(data.content, 4000)
+        && data.timestamp is timestamp;
+    }
+
+    function isValidRestaurantSettings(data) {
+      return data.keys().hasAll([
+          'restaurantName', 'description', 'whatsappNumber',
+          'openingHours', 'reservationSettings', 'currency'
+        ])
+        && data.keys().hasOnly([
+          'restaurantName', 'tagline', 'description', 'address', 'phone',
+          'whatsappNumber', 'email', 'openingHours', 'reservationSettings',
+          'socialLinks', 'currency', 'heroVideoUrl', 'updatedAt'
+        ])
+        && isNonEmptyString(data.restaurantName, 120)
+        && (!('tagline' in data) || isBoundedString(data.tagline, 160))
+        && isBoundedString(data.description, 1000)
+        && (!('address' in data) || isBoundedString(data.address, 300))
+        && (!('phone' in data) || isBoundedString(data.phone, 30))
+        && isNonEmptyString(data.whatsappNumber, 30)
+        && (!('email' in data) || isBoundedString(data.email, 200))
+        && data.openingHours is map
+        && data.reservationSettings is map
+        && (!('socialLinks' in data) || data.socialLinks is map)
+        && isNonEmptyString(data.currency, 10)
+        && (!('heroVideoUrl' in data) || isBoundedString(data.heroVideoUrl, 500))
+        && (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['notificationId', 'type', 'message', 'status', 'createdAt'])
+        && data.keys().hasOnly(['notificationId', 'customerId', 'type', 'channel', 'recipient', 'message', 'status', 'createdAt'])
+        && isValidId(data.notificationId)
+        && (!('customerId' in data) || isBoundedString(data.customerId, 128))
+        && isNonEmptyString(data.type, 60)
+        && (!('channel' in data) || data.channel in ['EMAIL', 'WHATSAPP'])
+        && (!('recipient' in data) || isBoundedString(data.recipient, 200))
+        && isNonEmptyString(data.message, 1000)
+        && data.status in ['SENT', 'FAILED', 'NOT_CONFIGURED']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidContactEnquiry(data) {
+      return data.keys().hasAll(['enquiryId', 'name', 'phone', 'email', 'subject', 'message', 'status', 'createdAt'])
+        && data.keys().hasOnly(['enquiryId', 'name', 'phone', 'email', 'subject', 'message', 'status', 'createdAt'])
+        && isValidId(data.enquiryId)
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 120
+        && data.phone is string && data.phone.size() >= 6 && data.phone.size() <= 30
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 200
+        && data.subject is string && data.subject.size() >= 2 && data.subject.size() <= 160
+        && data.message is string && data.message.size() >= 5 && data.message.size() <= 2000
+        && data.status in ['NEW', 'IN_REVIEW', 'RESOLVED']
+        && data.createdAt is timestamp;
+    }
+
+    function isValidNewsletterSubscriber(data) {
+      return data.keys().hasAll(['subscriberId', 'email', 'consent', 'createdAt'])
+        && data.keys().hasOnly(['subscriberId', 'email', 'consent', 'createdAt'])
+        && isValidId(data.subscriberId)
+        && data.email is string && data.email.size() >= 5 && data.email.size() <= 200
+        && data.consent is bool
+        && data.createdAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['logId', 'adminUid', 'action', 'entityType', 'entityId', 'timestamp'])
+        && data.keys().hasOnly(['logId', 'adminUid', 'action', 'entityType', 'entityId', 'details', 'timestamp'])
+        && isValidId(data.logId)
+        && isValidId(data.adminUid)
+        && isNonEmptyString(data.action, 80)
+        && isNonEmptyString(data.entityType, 60)
+        && isNonEmptyString(data.entityId, 128)
+        && (!('details' in data) || isBoundedString(data.details, 1000))
+        && data.timestamp is timestamp;
+    }
+
+    // -------------------------------------------------------------------------
+    // Collection Match Rules
+    // -------------------------------------------------------------------------
+
+    match /admins/{uid} {
+      allow get: if isValidId(uid) && ((isVerifiedUser() && request.auth.uid == uid) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(uid)
+        && isValidAdmin(incoming())
+        && incoming().uid == uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          (isBootstrapOwner() && request.auth.uid == uid && incoming().email == request.auth.token.email && incoming().role == 'OWNER' && incoming().active == true)
+          || isAdmin()
+        );
+      allow update: if isValidId(uid)
+        && isAdmin()
+        && isValidAdmin(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(uid) && isAdmin() && uid != request.auth.uid;
+    }
+
+    match /customers/{customerId} {
+      allow get: if isValidId(customerId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(customerId)
+        && isValidCustomer(incoming())
+        && incoming().customerId == customerId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(customerId)
+        && isAdmin()
+        && isValidCustomer(incoming())
+        && incoming().customerId == existing().customerId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(customerId) && isAdmin();
+    }
+
+    match /menuCategories/{categoryId} {
+      allow get: if isValidId(categoryId) && (existing().active == true || isAdmin());
+      allow list: if existing().active == true || isAdmin();
+      allow create: if isValidId(categoryId) && isAdmin() && isValidMenuCategory(incoming()) && incoming().categoryId == categoryId;
+      allow update: if isValidId(categoryId) && isAdmin() && isValidMenuCategory(incoming()) && incoming().categoryId == existing().categoryId;
+      allow delete: if isValidId(categoryId) && isAdmin();
+    }
+
+    match /menuItems/{itemId} {
+      allow get: if isValidId(itemId);
+      allow list: if existing().available == true || existing().available == false || isAdmin();
+      allow create: if isValidId(itemId)
+        && isAdmin()
+        && isValidMenuItem(incoming())
+        && incoming().itemId == itemId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/menuCategories/$(incoming().categoryId));
+      allow update: if isValidId(itemId)
+        && isAdmin()
+        && isValidMenuItem(incoming())
+        && incoming().itemId == existing().itemId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/menuCategories/$(incoming().categoryId));
+      allow delete: if isValidId(itemId) && isAdmin();
+    }
+
+    match /offers/{offerId} {
+      allow get: if isValidId(offerId) && ((existing().active == true && existing().expiresAt > request.time) || isAdmin());
+      allow list: if (existing().active == true && existing().expiresAt > request.time) || isAdmin();
+      allow create: if isValidId(offerId) && isAdmin() && isValidOffer(incoming()) && incoming().offerId == offerId;
+      allow update: if isValidId(offerId) && isAdmin() && isValidOffer(incoming()) && incoming().offerId == existing().offerId;
+      allow delete: if isValidId(offerId) && isAdmin();
+    }
+
+    match /restaurantTables/{tableId} {
+      allow get: if isValidId(tableId) && (existing().active == true || isAdmin());
+      allow list: if existing().active == true || isAdmin();
+      allow create: if isValidId(tableId) && isAdmin() && isValidRestaurantTable(incoming()) && incoming().tableId == tableId;
+      allow update: if isValidId(tableId) && isAdmin() && isValidRestaurantTable(incoming()) && incoming().tableId == existing().tableId;
+      allow delete: if isValidId(tableId) && isAdmin();
+    }
+
+    match /timeSlots/{slotId} {
+      allow get: if isValidId(slotId) && (existing().active == true || isAdmin());
+      allow list: if existing().active == true || isAdmin();
+      allow create: if isValidId(slotId) && isAdmin() && isValidTimeSlot(incoming()) && incoming().slotId == slotId;
+      allow update: if isValidId(slotId) && isAdmin() && isValidTimeSlot(incoming()) && incoming().slotId == existing().slotId;
+      allow delete: if isValidId(slotId) && isAdmin();
+    }
+
+    match /slotLocks/{lockId} {
+      allow get: if isValidId(lockId);
+      allow list: if existing().active == true || isAdmin();
+      allow create: if isValidId(lockId)
+        && isValidSlotLock(incoming())
+        && incoming().lockId == lockId
+        && incoming().active == true
+        && incoming().createdAt == request.time
+        && exists(/databases/$(database)/documents/restaurantTables/$(incoming().tableId))
+        && existsAfter(/databases/$(database)/documents/reservations/$(incoming().reservationId));
+      allow update: if isValidId(lockId) && isAdmin() && isValidSlotLock(incoming()) && incoming().lockId == existing().lockId && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(lockId) && isAdmin();
+    }
+
+    match /reservations/{reservationId} {
+      allow get: if isValidId(reservationId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(reservationId)
+        && isValidReservation(incoming())
+        && incoming().reservationId == reservationId
+        && incoming().status == 'PENDING'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/restaurantTables/$(incoming().tableId))
+        && existsAfter(/databases/$(database)/documents/slotLocks/$(slotLockIdFor(incoming())))
+        && existsAfter(/databases/$(database)/documents/reservationStatuses/$(incoming().referenceCode));
+      allow update: if isValidId(reservationId)
+        && isValidReservation(incoming())
+        && isAdmin()
+        && incoming().reservationId == existing().reservationId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time;
+      allow delete: if isValidId(reservationId) && isAdmin();
+    }
+
+    match /reservationStatuses/{lookupKey} {
+      allow get: if isValidId(lookupKey);
+      allow list: if false;
+      allow create: if isValidId(lookupKey)
+        && isValidReservationStatusView(incoming())
+        && incoming().referenceCode == lookupKey
+        && incoming().status == 'PENDING'
+        && incoming().updatedAt == request.time
+        && existsAfter(/databases/$(database)/documents/reservations/$(incoming().reservationId));
+      allow update: if isValidId(lookupKey)
+        && isValidReservationStatusView(incoming())
+        && incoming().referenceCode == existing().referenceCode
+        && incoming().reservationId == existing().reservationId
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || (
+            existing().status in ['PENDING', 'CONFIRMED']
+            && incoming().status == existing().status
+            && incoming().cancellationRequested == true
+            && incoming().diff(existing()).affectedKeys().hasOnly(['cancellationRequested', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(lookupKey) && isAdmin();
+    }
+
+    match /orders/{orderId} {
+      allow get: if isValidId(orderId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(orderId)
+        && isValidOrder(incoming())
+        && incoming().orderId == orderId
+        && incoming().orderStatus == 'WHATSAPP_INITIATED'
+        && incoming().paymentStatus == 'UNPAID'
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(orderId)
+        && isAdmin()
+        && isValidOrder(incoming())
+        && incoming().orderId == existing().orderId
+        && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(orderId) && isAdmin();
+    }
+
+    match /orderItems/{orderItemId} {
+      allow get: if isValidId(orderItemId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(orderItemId)
+        && isValidOrderItem(incoming())
+        && incoming().orderItemId == orderItemId
+        && existsAfter(/databases/$(database)/documents/orders/$(incoming().orderId));
+      allow update: if isValidId(orderItemId) && isAdmin() && isValidOrderItem(incoming()) && incoming().orderItemId == existing().orderItemId;
+      allow delete: if isValidId(orderItemId) && isAdmin();
+    }
+
+    match /chatbotConversations/{conversationId} {
+      allow get: if isValidId(conversationId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(conversationId)
+        && isValidChatbotConversation(incoming())
+        && incoming().conversationId == conversationId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(conversationId)
+        && isValidChatbotConversation(incoming())
+        && incoming().conversationId == existing().conversationId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin()
+          || incoming().diff(existing()).affectedKeys().hasOnly(['updatedAt'])
+        );
+      allow delete: if isValidId(conversationId) && isAdmin();
+    }
+
+    match /chatbotMessages/{messageId} {
+      allow get: if isValidId(messageId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(messageId)
+        && isValidChatbotMessage(incoming())
+        && incoming().messageId == messageId
+        && incoming().timestamp == request.time
+        && exists(/databases/$(database)/documents/chatbotConversations/$(incoming().conversationId));
+      allow update: if false;
+      allow delete: if isValidId(messageId) && isAdmin();
+    }
+
+    match /restaurantSettings/{settingId} {
+      allow get: if isValidId(settingId) && (settingId == 'public' || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(settingId) && isAdmin() && isValidRestaurantSettings(incoming());
+      allow update: if isValidId(settingId) && isAdmin() && isValidRestaurantSettings(incoming());
+      allow delete: if isValidId(settingId) && isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(notificationId) && isAdmin() && isValidNotification(incoming()) && incoming().notificationId == notificationId && incoming().createdAt == request.time;
+      allow update: if isValidId(notificationId) && isAdmin() && isValidNotification(incoming()) && incoming().notificationId == existing().notificationId && incoming().createdAt == existing().createdAt;
+      allow delete: if isValidId(notificationId) && isAdmin();
+    }
+
+    match /contactEnquiries/{enquiryId} {
+      allow get: if isValidId(enquiryId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(enquiryId)
+        && isValidContactEnquiry(incoming())
+        && incoming().enquiryId == enquiryId
+        && incoming().status == 'NEW'
+        && incoming().createdAt == request.time;
+      allow update: if isValidId(enquiryId)
+        && isAdmin()
+        && isValidContactEnquiry(incoming())
+        && incoming().enquiryId == existing().enquiryId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status']);
+      allow delete: if isValidId(enquiryId) && isAdmin();
+    }
+
+    match /newsletterSubscribers/{subscriberId} {
+      allow get: if isValidId(subscriberId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(subscriberId)
+        && isValidNewsletterSubscriber(incoming())
+        && incoming().subscriberId == subscriberId
+        && incoming().consent == true
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(subscriberId) && isAdmin();
+    }
+
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId)
+        && isAdmin()
+        && isValidAuditLog(incoming())
+        && incoming().logId == logId
+        && incoming().adminUid == request.auth.uid
+        && incoming().timestamp == request.time;
+      allow update: if false;
+      allow delete: if false;
+    }
+  }
+}

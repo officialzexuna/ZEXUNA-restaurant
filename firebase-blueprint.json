@@ -1,0 +1,388 @@
+{
+  "entities": {
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized restaurant administrator profile.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "role": { "type": "string", "enum": ["OWNER", "MANAGER", "STAFF"] },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "displayName", "role", "active", "createdAt", "updatedAt"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Registered or guest diner profile.",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 30 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerId", "name", "phone", "email", "createdAt", "updatedAt"]
+    },
+    "MenuCategory": {
+      "title": "MenuCategory",
+      "description": "Public restaurant menu category.",
+      "type": "object",
+      "properties": {
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "description": { "type": "string", "maxLength": 400 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "displayOrder": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["categoryId", "name", "description", "imageUrl", "displayOrder", "active"]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "Restaurant dish with dynamic pricing and dietary metadata.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 800 },
+        "categoryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "originalPrice": { "type": "number" },
+        "discountedPrice": { "type": "number" },
+        "vegetarian": { "type": "boolean" },
+        "allergens": { "type": "array" },
+        "available": { "type": "boolean" },
+        "featured": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["itemId", "name", "description", "categoryId", "imageUrl", "originalPrice", "vegetarian", "allergens", "available", "featured", "createdAt", "updatedAt"]
+    },
+    "Offer": {
+      "title": "Offer",
+      "description": "Promotional discount campaign such as The Great Biryani Price Drop.",
+      "type": "object",
+      "properties": {
+        "offerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 600 },
+        "applicableItems": { "type": "array" },
+        "originalPrice": { "type": "number" },
+        "discountedPrice": { "type": "number" },
+        "discountType": { "type": "string", "enum": ["PERCENTAGE", "FIXED_AMOUNT"] },
+        "discountValue": { "type": "number" },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "startAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": "string", "format": "date-time" },
+        "active": { "type": "boolean" },
+        "terms": { "type": "string", "maxLength": 600 }
+      },
+      "required": ["offerId", "title", "description", "applicableItems", "originalPrice", "discountedPrice", "discountType", "discountValue", "startAt", "expiresAt", "active", "terms"]
+    },
+    "Reservation": {
+      "title": "Reservation",
+      "description": "Table reservation record with lifecycle status.",
+      "type": "object",
+      "properties": {
+        "reservationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "referenceCode": { "type": "string", "minLength": 4, "maxLength": 32, "pattern": "^[A-Z0-9\\-]+$" },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerName": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 30 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "startTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "endTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "guestCount": { "type": "number" },
+        "tableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "specialRequests": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "REJECTED", "CANCELLED", "COMPLETED", "NO_SHOW"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["reservationId", "referenceCode", "customerId", "customerName", "phone", "email", "date", "startTime", "endTime", "guestCount", "tableId", "status", "createdAt", "updatedAt"]
+    },
+    "ReservationStatusView": {
+      "title": "ReservationStatusView",
+      "description": "PII-free reservation status lookup record keyed by reference code.",
+      "type": "object",
+      "properties": {
+        "referenceCode": { "type": "string", "minLength": 4, "maxLength": 32, "pattern": "^[A-Z0-9\\-]+$" },
+        "reservationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "startTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "endTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "guestCount": { "type": "number" },
+        "tableNumber": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["PENDING", "CONFIRMED", "REJECTED", "CANCELLED", "COMPLETED", "NO_SHOW"] },
+        "cancellationRequested": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["referenceCode", "reservationId", "date", "startTime", "endTime", "guestCount", "status", "updatedAt"]
+    },
+    "SlotLock": {
+      "title": "SlotLock",
+      "description": "Atomic table and time-slot lock preventing double bookings.",
+      "type": "object",
+      "properties": {
+        "lockId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "startTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "reservationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["lockId", "tableId", "date", "startTime", "reservationId", "active", "createdAt"]
+    },
+    "RestaurantTable": {
+      "title": "RestaurantTable",
+      "description": "Dining room table inventory.",
+      "type": "object",
+      "properties": {
+        "tableId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "tableNumber": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "capacity": { "type": "number" },
+        "location": { "type": "string", "maxLength": 80 },
+        "active": { "type": "boolean" }
+      },
+      "required": ["tableId", "tableNumber", "capacity", "location", "active"]
+    },
+    "TimeSlot": {
+      "title": "TimeSlot",
+      "description": "Configured dining service time slot capacity tracker.",
+      "type": "object",
+      "properties": {
+        "slotId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "startTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "endTime": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+        "capacity": { "type": "number" },
+        "reservedCount": { "type": "number" },
+        "active": { "type": "boolean" }
+      },
+      "required": ["slotId", "date", "startTime", "endTime", "capacity", "reservedCount", "active"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "Customer order summary prepared for WhatsApp confirmation.",
+      "type": "object",
+      "properties": {
+        "orderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 30 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "discount": { "type": "number" },
+        "total": { "type": "number" },
+        "orderType": { "type": "string", "enum": ["DELIVERY", "PICKUP"] },
+        "orderStatus": { "type": "string", "enum": ["WHATSAPP_INITIATED", "CONFIRMED", "PREPARING", "COMPLETED", "CANCELLED"] },
+        "paymentStatus": { "type": "string", "enum": ["UNPAID", "PAID_AT_COUNTER", "PAID"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["orderId", "customerId", "customerName", "phone", "items", "subtotal", "discount", "total", "orderType", "orderStatus", "paymentStatus", "createdAt"]
+    },
+    "OrderItem": {
+      "title": "OrderItem",
+      "description": "Line item inside an order.",
+      "type": "object",
+      "properties": {
+        "orderItemId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "orderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "itemId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "quantity": { "type": "number" },
+        "unitPrice": { "type": "number" },
+        "discountApplied": { "type": "number" },
+        "lineTotal": { "type": "number" }
+      },
+      "required": ["orderItemId", "orderId", "itemId", "name", "quantity", "unitPrice", "discountApplied", "lineTotal"]
+    },
+    "ChatbotConversation": {
+      "title": "ChatbotConversation",
+      "description": "AI restaurant assistant conversation session.",
+      "type": "object",
+      "properties": {
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["conversationId", "createdAt", "updatedAt"]
+    },
+    "ChatbotMessage": {
+      "title": "ChatbotMessage",
+      "description": "Individual message in an AI assistant conversation.",
+      "type": "object",
+      "properties": {
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "conversationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sender": { "type": "string", "enum": ["USER", "ASSISTANT"] },
+        "content": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["messageId", "conversationId", "sender", "content", "timestamp"]
+    },
+    "RestaurantSettings": {
+      "title": "RestaurantSettings",
+      "description": "Configurable restaurant profile, hours, address, and links.",
+      "type": "object",
+      "properties": {
+        "restaurantName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "address": { "type": "string", "maxLength": 300 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "whatsappNumber": { "type": "string", "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 200 },
+        "openingHours": { "type": "object" },
+        "reservationSettings": { "type": "object" },
+        "socialLinks": { "type": "object" },
+        "currency": { "type": "string", "maxLength": 10 },
+        "heroVideoUrl": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["restaurantName", "description", "whatsappNumber", "openingHours", "reservationSettings", "currency"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "Email or WhatsApp Business notification delivery record.",
+      "type": "object",
+      "properties": {
+        "notificationId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "customerId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 60 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["SENT", "FAILED", "NOT_CONFIGURED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["notificationId", "type", "message", "status", "createdAt"]
+    },
+    "ContactEnquiry": {
+      "title": "ContactEnquiry",
+      "description": "Customer or catering contact inquiry.",
+      "type": "object",
+      "properties": {
+        "enquiryId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "phone": { "type": "string", "minLength": 6, "maxLength": 30 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "subject": { "type": "string", "minLength": 2, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 5, "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["NEW", "IN_REVIEW", "RESOLVED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["enquiryId", "name", "phone", "email", "subject", "message", "status", "createdAt"]
+    },
+    "NewsletterSubscriber": {
+      "title": "NewsletterSubscriber",
+      "description": "Opt-in newsletter subscriber with explicit consent flag.",
+      "type": "object",
+      "properties": {
+        "subscriberId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "consent": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subscriberId", "email", "consent", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable administrative action audit trail.",
+      "type": "object",
+      "properties": {
+        "logId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "adminUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "action": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "entityType": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "entityId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["logId", "adminUid", "action", "entityType", "entityId", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/admins/{uid}": {
+      "schema": { "$ref": "#/entities/Admin" },
+      "description": "Authorized restaurant administrators keyed by Firebase Auth UID."
+    },
+    "/customers/{customerId}": {
+      "schema": { "$ref": "#/entities/Customer" },
+      "description": "Customer profiles accessible strictly to administrators."
+    },
+    "/menuCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/MenuCategory" },
+      "description": "Publicly readable active menu categories; admin-managed."
+    },
+    "/menuItems/{itemId}": {
+      "schema": { "$ref": "#/entities/MenuItem" },
+      "description": "Publicly readable menu items; admin-managed pricing and availability."
+    },
+    "/offers/{offerId}": {
+      "schema": { "$ref": "#/entities/Offer" },
+      "description": "Promotional campaigns; only active non-expired offers shown publicly."
+    },
+    "/reservations/{reservationId}": {
+      "schema": { "$ref": "#/entities/Reservation" },
+      "description": "Full table reservation records with PII; admin-readable, server-or-validated-create."
+    },
+    "/reservationStatuses/{lookupKey}": {
+      "schema": { "$ref": "#/entities/ReservationStatusView" },
+      "description": "PII-free single-document status projection keyed by referenceCode for guest lookup."
+    },
+    "/slotLocks/{lockId}": {
+      "schema": { "$ref": "#/entities/SlotLock" },
+      "description": "Atomic table/time-slot locks preventing double bookings."
+    },
+    "/restaurantTables/{tableId}": {
+      "schema": { "$ref": "#/entities/RestaurantTable" },
+      "description": "Dining room table definitions and capacities."
+    },
+    "/timeSlots/{slotId}": {
+      "schema": { "$ref": "#/entities/TimeSlot" },
+      "description": "Date and time-slot reservation capacity counters."
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Customer WhatsApp order summaries; admin-readable."
+    },
+    "/orderItems/{orderItemId}": {
+      "schema": { "$ref": "#/entities/OrderItem" },
+      "description": "Order line items; admin-readable."
+    },
+    "/chatbotConversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/ChatbotConversation" },
+      "description": "Gemini AI chatbot conversation headers."
+    },
+    "/chatbotMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatbotMessage" },
+      "description": "Gemini AI chatbot conversation messages."
+    },
+    "/restaurantSettings/{settingId}": {
+      "schema": { "$ref": "#/entities/RestaurantSettings" },
+      "description": "Public restaurant settings document ('public') and admin configuration."
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Notification delivery logs; strictly admin-readable."
+    },
+    "/contactEnquiries/{enquiryId}": {
+      "schema": { "$ref": "#/entities/ContactEnquiry" },
+      "description": "Customer contact enquiries; create-only for guests, admin-managed."
+    },
+    "/newsletterSubscribers/{subscriberId}": {
+      "schema": { "$ref": "#/entities/NewsletterSubscriber" },
+      "description": "Newsletter subscribers with explicit consent; create-only for guests, admin-readable."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable admin audit log records; strictly admin-readable and append-only."
+    }
+  }
+}
